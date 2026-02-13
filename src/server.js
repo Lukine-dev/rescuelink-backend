@@ -6,7 +6,7 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
 const vehicleRoutes = require('./routes/vehicles');
-const userRoutes = require('./routes/users')
+const userRoutes = require('./routes/users');
 const alertRoutes = require('./routes/alerts');
 
 const app = express();
@@ -26,12 +26,10 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: 'http://localhost:5000',
-        description: 'Development server',
-      },
-      {
-        url: 'https://rescuelink-backend.onrender.com',
-        description: 'Production server',
+        url: process.env.NODE_ENV === 'production'
+          ? 'https://rescuelink-backend-j0gz.onrender.com'
+          : 'http://localhost:5000',
+        description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server',
       },
     ],
     components: {
@@ -53,45 +51,16 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 
-// Middleware
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, curl)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-       'http://192.168.1.29:3000',
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:3000',
-      'https://rescuelink-backend-j0gz.onrender.com',
-     
-    ];
-     
-    const allowedPatterns = [
-      /\.vercel\.app$/,
-      /\.netlify\.app$/,
-    ];
-
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      return callback(null, true);
-    }
-    if (allowedPatterns.some(pattern => pattern.test(origin))) {
-      return callback(null, true);
-    } 
-    
-      callback(new Error('Not allowed by CORS'));
-
-  },
+// Middleware - CORS (Allow all origins)
+app.use(cors({
+  origin: true, // Allow all origins
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 600, // 10 minutes
-};
+}));
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -101,9 +70,9 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
   customSiteTitle: 'RescueLink API Docs',
 }));
 
-// Request logging
+// Request logging (add origin for debugging)
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin || 'no-origin'}`);
   next();
 });
 
@@ -125,7 +94,9 @@ app.get('/api/v1/health', (req, res) => {
     message: 'RescueLink API is running',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    documentation: `http://localhost:${process.env.PORT || 5000}/api-docs`
+    documentation: process.env.NODE_ENV === 'production'
+      ? 'https://rescuelink-backend-j0gz.onrender.com/api-docs'
+      : `http://localhost:${process.env.PORT || 5000}/api-docs`
   });
 });
 
@@ -137,6 +108,12 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err.stack);
+  
+  // Handle CORS errors specifically
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ message: 'CORS policy blocked this request' });
+  }
+  
   res.status(500).json({ message: 'Something went wrong!' });
 });
 
@@ -146,4 +123,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/api/v1/health`);
   console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
+  console.log(`🌐 CORS: Allowing all origins (development mode)`);
 });
