@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const vehicleRoutes = require('./routes/vehicles');
 const userRoutes = require('./routes/users');
 const alertRoutes = require('./routes/alerts');
+const geolocationRoutes = require('./routes/geolocation');
 
 const app = express();
 
@@ -83,7 +84,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/vehicles', vehicleRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/alerts', alertRoutes);
-
+app.use('/api/v1/geolocation', geolocationRoutes);
 // Root redirect to docs
 app.get('/', (req, res) => {
   res.redirect('/api-docs');
