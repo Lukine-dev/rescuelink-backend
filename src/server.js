@@ -11,6 +11,10 @@ const authRoutes = require('./routes/auth');
 const vehicleRoutes = require('./routes/vehicles');
 const userRoutes = require('./routes/users');
 const alertRoutes = require('./routes/alerts');
+const sosRoutes = require('./routes/sos');
+const emergencyContactsRoutes = require('./routes/emergencyContacts');
+const crashRoutes = require ('./routes/crash')
+const responderRoutes = require ('./routes/responders')
 const geolocationRoutes = require('./routes/geolocation');
 
 const { initSocket } = require('./socket');
@@ -102,9 +106,21 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/vehicles', vehicleRoutes);
+
 app.use('/api/v1/users', userRoutes);
+
+// ACCIDENT ROUTES
 app.use('/api/v1/alerts', alertRoutes);
+app.use('/api/v1/sos', sosRoutes);
+app.use('/api/v1/crash', crashRoutes);
+
+// ADMIN ROUTES
+app.use('/api/v1/vehicles', vehicleRoutes);
+app.use('/api/v1/responders', responderRoutes);
+
+app.use('/api/v1/emergency-contacts', emergencyContactsRoutes);
+
+
 app.use('/api/v1/geolocation', geolocationRoutes);
 // Root redirect to docs
 app.get('/', (req, res) => {
