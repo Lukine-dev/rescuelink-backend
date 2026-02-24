@@ -3,7 +3,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
 
+
 const router = express.Router();
+
 
 /**
  * @swagger
@@ -11,6 +13,7 @@ const router = express.Router();
  *   name: Authentication
  *   description: User authentication endpoints
  */
+
 
 /**
  * @swagger
@@ -33,11 +36,11 @@ const router = express.Router();
  *               email:
  *                 type: string
  *                 format: email
- *                 example: admin@rescuelink.com
+ *                 example: admin@gmail.com
  *               password:
  *                 type: string
  *                 format: password
- *                 example: admin123
+ *                 example: password
  *               first_name:
  *                 type: string
  *                 example: John
@@ -56,6 +59,13 @@ const router = express.Router();
  *               user_phone_number:
  *                 type: string
  *                 example: "09123456789"
+ *               relative_number:
+ *                 type: string
+ *                 example: "09987654321"
+ *               birth_date:
+ *                 type: string
+ *                 format: date
+ *                 example: "1990-01-15"
  *               role:
  *                 type: string
  *                 enum: [user, admin, rescuer, dispatcher]
@@ -92,14 +102,19 @@ router.post('/register', async (req, res) => {
       ext_name,
       username,
       user_phone_number,
+      relative_number,
+      birth_date,
       role = 'user'
     } = req.body;
+
 
     if (!email || !password || !first_name || !last_name) {
       return res.status(400).json({ message: 'Required fields are missing' });
     }
 
+
     const hashedPassword = await bcrypt.hash(password, 10);
+
 
     const { data, error } = await supabase
       .from('users')
@@ -112,10 +127,13 @@ router.post('/register', async (req, res) => {
         ext_name,
         username,
         user_phone_number,
+        relative_number,
+        birth_date,
         role,
       }])
       .select()
       .single();
+
 
     if (error) {
       if (error.code === '23505') {
@@ -124,6 +142,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: error.message });
     }
 
+
     delete data.password;
     res.status(201).json(data);
   } catch (error) {
@@ -131,6 +150,7 @@ router.post('/register', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 /**
  * @swagger
@@ -191,9 +211,11 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
+
 
     const { data: user, error } = await supabase
       .from('users')
@@ -201,14 +223,17 @@ router.post('/login', async (req, res) => {
       .eq('email', email)
       .single();
 
+
     if (error || !user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
 
     const token = jwt.sign(
       { 
@@ -221,7 +246,9 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1h' }
     );
 
+
     delete user.password;
+
 
     res.json({
       access_token: token,
@@ -234,6 +261,7 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 /**
  * @swagger
@@ -271,8 +299,10 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
+
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
 
     const { data: user, error } = await supabase
       .from('users')
@@ -280,9 +310,11 @@ router.get('/me', async (req, res) => {
       .eq('id', decoded.id)
       .single();
 
+
     if (error || !user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
 
     delete user.password;
     res.json(user);
@@ -291,6 +323,7 @@ router.get('/me', async (req, res) => {
     res.status(401).json({ message: 'Invalid token' });
   }
 });
+
 
 /**
  * @swagger
@@ -307,5 +340,6 @@ router.get('/me', async (req, res) => {
 router.post('/logout', (req, res) => {
   res.json({ message: 'Logged out successfully' });
 });
+
 
 module.exports = router;
