@@ -1,8 +1,10 @@
 const express = require('express');
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
-
+const { getIO } = require('../socketInstance');
 const router = express.Router();
+
+
 
 // Protect all routes
 router.use(authMiddleware);
@@ -18,7 +20,11 @@ router.use(authMiddleware);
  * @swagger
  * /api/v1/alerts:
  *   get:
- *     summary: Get all alerts
+ *     summary: Get alerts (role-based visibility)
+ *     description: |
+ *       - **Users** can only see alerts they created.
+ *       - **Admin/Dispatcher/Rescuer** can see all alerts.
+ *       - Supports filtering by status, type, or specific user.
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
@@ -27,21 +33,22 @@ router.use(authMiddleware);
  *         name: status
  *         schema:
  *           type: string
- *         description: Filter by status
+ *           enum: [pending, responding, resolved, cancelled]
  *       - in: query
  *         name: alert_type
  *         schema:
  *           type: string
- *         description: Filter by alert type
+ *           enum: [medical, fire, accident, crime, natural_disaster, other]
  *       - in: query
  *         name: user_id
  *         schema:
  *           type: integer
- *         description: Filter by user
+ *         description: Admin/Dispatcher only filter
  *     responses:
  *       200:
- *         description: List of alerts
+ *         description: Alerts retrieved successfully
  */
+
 router.get('/', async (req, res) => {
   try {
     const { status, alert_type, user_id } = req.query;
@@ -88,6 +95,9 @@ router.get('/', async (req, res) => {
  * /api/v1/alerts/{id}:
  *   get:
  *     summary: Get alert by ID
+ *     description: |
+ *       Users may only access their own alert.
+ *       Admin/Dispatcher/Rescuer may access any alert.
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
@@ -99,8 +109,13 @@ router.get('/', async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Alert data
+ *         description: Alert found
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Alert not found
  */
+
 router.get('/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -135,7 +150,10 @@ router.get('/:id', async (req, res) => {
  * @swagger
  * /api/v1/alerts:
  *   post:
- *     summary: Create new alert/report
+ *     summary: Create a new emergency alert
+ *     description: |
+ *       Creates an alert reported by the authenticated user.
+ *       Status is automatically set to **pending**.
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
@@ -145,41 +163,35 @@ router.get('/:id', async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - alert_type
- *               - severity
- *               - title
- *               - location
+ *             required: [alert_type, severity, title, location]
  *             properties:
  *               alert_type:
  *                 type: string
  *                 enum: [medical, fire, accident, crime, natural_disaster, other]
- *                 example: accident
  *               severity:
  *                 type: string
  *                 enum: [low, medium, high, critical]
- *                 example: high
  *               title:
  *                 type: string
- *                 example: Car Accident on EDSA
  *               description:
  *                 type: string
- *                 example: Two vehicles collided, multiple injuries
  *               location:
  *                 type: string
- *                 example: EDSA Guadalupe, Makati City
  *               latitude:
- *                 type: number
- *                 example: 14.5547
+ *                 oneOf:
+ *                   - type: number
+ *                   - type: string
  *               longitude:
- *                 type: number
- *                 example: 121.0244
+ *                 oneOf:
+ *                   - type: number
+ *                   - type: string
  *               image_url:
  *                 type: string
  *     responses:
  *       201:
- *         description: Alert created successfully
+ *         description: Alert created
  */
+
 router.post('/', async (req, res) => {
   try {
     const {
@@ -233,7 +245,13 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    const io = getIO();
+io.emit("alert:new", data);
+
     res.status(201).json(data);
+
+
   } catch (error) {
     console.error('Create alert error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
@@ -244,7 +262,10 @@ router.post('/', async (req, res) => {
  * @swagger
  * /api/v1/alerts/{id}:
  *   put:
- *     summary: Update alert (Admin/Dispatcher only)
+ *     summary: Update alert fields (Admin/Dispatcher only)
+ *     description: |
+ *       Allows partial update of alert fields.
+ *       Only roles **admin** and **dispatcher** may update alerts.
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
@@ -254,16 +275,13 @@ router.post('/', async (req, res) => {
  *         required: true
  *         schema:
  *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
  *     responses:
  *       200:
- *         description: Alert updated successfully
+ *         description: Alert updated
+ *       403:
+ *         description: Unauthorized role
  */
+
 router.put('/:id', async (req, res) => {
   try {
     // Only admin/dispatcher can update
@@ -292,6 +310,10 @@ router.put('/:id', async (req, res) => {
     if (!data) {
       return res.status(404).json({ message: 'Alert not found' });
     }
+
+    const io = getIO();
+io.emit("alert:updated", data);
+
     res.json(data);
   } catch (error) {
     console.error('Update alert error:', error);
@@ -304,31 +326,31 @@ router.put('/:id', async (req, res) => {
  * /api/v1/alerts/{id}/status:
  *   patch:
  *     summary: Update alert status
+ *     description: |
+ *       Allowed roles: **admin, dispatcher, rescuer**
+ *
+ *       Automatically manages vehicle lifecycle:
+ *       - responding → assigned vehicle status becomes `responding`
+ *       - resolved   → vehicle status becomes `available`
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - status
+ *             required: [status]
  *             properties:
  *               status:
  *                 type: string
  *                 enum: [pending, responding, resolved, cancelled]
  *     responses:
  *       200:
- *         description: Status updated successfully
+ *         description: Status updated
  */
+
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
@@ -365,7 +387,14 @@ router.patch('/:id/status', async (req, res) => {
       await supabase.from('vehicles').update({ status: 'available' }).eq('id', data.assigned_vehicle_id);
     }
 
+
+        const io = getIO();
+io.emit("alert:status_updated", data);
+
     res.json(data);
+
+
+
   } catch (error) {
     console.error('Update status error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
@@ -376,16 +405,16 @@ router.patch('/:id/status', async (req, res) => {
  * @swagger
  * /api/v1/alerts/{id}/assign:
  *   patch:
- *     summary: Assign vehicle and responder to alert
+ *     summary: Assign vehicle and responder (Admin/Dispatcher only)
+ *     description: |
+ *       Assigns a vehicle and/or responder to the alert.
+ *
+ *       Business rules automatically enforced:
+ *       - Previous vehicle (if replaced) → set to `available`
+ *       - New vehicle → set to `assigned`
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
  *     requestBody:
  *       required: true
  *       content:
@@ -401,6 +430,7 @@ router.patch('/:id/status', async (req, res) => {
  *       200:
  *         description: Assignment successful
  */
+
 router.patch('/:id/assign', async (req, res) => {
   try {
     const { vehicle_id, responder_id } = req.body;
@@ -459,6 +489,9 @@ router.patch('/:id/assign', async (req, res) => {
       if (vehicleError) console.error('Vehicle status update failed:', vehicleError);
     }
 
+    const io = getIO();
+io.emit("alert:assigned", updatedAlert);
+
     res.json(updatedAlert);
   } catch (error) {
     console.error('Assign alert error:', error);
@@ -472,19 +505,17 @@ router.patch('/:id/assign', async (req, res) => {
  * /api/v1/alerts/{id}:
  *   delete:
  *     summary: Delete alert (Admin only)
+ *     description: Permanently removes an alert. Restricted to admin role.
  *     tags: [Alerts]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
  *     responses:
  *       200:
- *         description: Alert deleted successfully
+ *         description: Alert deleted
+ *       403:
+ *         description: Admin only
  */
+
 router.delete('/:id', async (req, res) => {
   try {
     // Only admin can delete
@@ -498,6 +529,10 @@ router.delete('/:id', async (req, res) => {
       .eq('id', req.params.id);
 
     if (error) throw error;
+
+    const io = getIO();
+io.emit("alert:deleted", { id: req.params.id });
+
     res.json({ message: 'Alert deleted successfully' });
   } catch (error) {
     console.error('Delete alert error:', error);

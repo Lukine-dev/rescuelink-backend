@@ -4,13 +4,34 @@ const swaggerUi = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
 require('dotenv').config();
 
+const http = require('http');
+const { Server } = require('socket.io');
+
 const authRoutes = require('./routes/auth');
 const vehicleRoutes = require('./routes/vehicles');
 const userRoutes = require('./routes/users');
 const alertRoutes = require('./routes/alerts');
 const geolocationRoutes = require('./routes/geolocation');
 
+const { initSocket } = require('./socket');
+const { setIO } = require('./socketInstance');
+
 const app = express();
+
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000", // your React dev URL
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+})
+
+
+
+
 
 // Swagger Configuration
 const swaggerOptions = {
@@ -121,10 +142,8 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/api/v1/health`);
-  console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
-  console.log(`🌐 CORS: Allowing all origins (development mode)`);
+initSocket(io);
+setIO(io);
+server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
