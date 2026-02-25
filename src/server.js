@@ -27,8 +27,8 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000", // your React dev URL
-    methods: ["GET", "POST"],
+    origin: ["http://localhost:3000", "https://rescuelink-ui.vercel.app"], // your React dev URL
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
   },
 })
